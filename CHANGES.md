@@ -265,3 +265,77 @@
 **Why it matters:** If the definition of "active" changes (e.g., adding a `verified` status), every occurrence must be updated. Missed updates cause subtle bugs.
 
 **Fix:** Added a `scopeActive()` query scope to the Contact model. All consumers now use `->active()` instead of `->where('status', 'active')`.
+
+---
+
+## 27. No rate limiting on API endpoints
+
+**Issue:** All API endpoints accept unlimited requests with no throttling.
+
+**Why it matters:** Without rate limiting, a malicious actor (or a misconfigured client) can flood the API with requests. The dispatch endpoint is particularly dangerous — spamming it could queue millions of jobs. This is a denial-of-service vector.
+
+**Fix:** Wrapped all API routes in `throttle:60,1` middleware — 60 requests per minute per IP. Laravel handles the 429 Too Many Requests response automatically.
+
+---
+
+## 28. Weak email validation on contact creation
+
+**Issue:** The email validation rule was `'email'`, which accepts loosely formatted strings that aren't valid email addresses.
+
+**Why it matters:** Invalid emails waste resources during campaign dispatch — jobs are created and queued for addresses that will inevitably bounce. This increases queue load and degrades deliverability metrics.
+
+**Fix:** Changed to `'email:rfc'` for strict RFC 5321 compliance. Added `max:255` to prevent oversized inputs.
+
+**Trade-off:** DNS validation (`email:rfc,dns`) was considered but rejected — it requires network lookups during validation, slows down requests, and fails in environments without internet access (CI, containers).
+
+---
+
+## 29. Missing type validation on foreign key inputs
+
+**Issue:** `contact_list_id` and `contact_id` in FormRequests only validated with `exists:` but not `integer`. String values could pass validation and cause unexpected query behaviour.
+
+**Why it matters:** MySQL's type coercion silently converts strings to integers, which can lead to incorrect matches (e.g., `"1abc"` matches ID `1`). Explicit type validation catches malformed input at the boundary.
+
+**Fix:** Added `'integer'` rule to all foreign key fields in FormRequests.
+
+---
+
+## 30. No max length on campaign body
+
+**Issue:** The campaign `body` field had no size limit in the FormRequest. The migration defines it as `text` (64KB in MySQL), but no application-level validation existed.
+
+**Why it matters:** An attacker could submit a body with millions of characters, causing excessive memory usage during request processing, storage bloat, and slow job processing when the body is loaded for each send.
+
+**Fix:** Added `'max:65535'` to match the MySQL `text` column limit.
+
+---
+
+## 31. Job error messages may contain sensitive data
+
+**Issue:** The `failed()` method in `SendCampaignEmail` stores the raw exception message in the database. Exception messages can contain SQL queries, file paths, credentials, or internal application details.
+
+**Why it matters:** If error data is exposed via an API endpoint (e.g., campaign show with send details), internal implementation details leak to the client. This is an information disclosure vulnerability.
+
+**Fix:** Truncated error messages to 500 characters using `Str::limit()`. Added a `timeout` of 30 seconds to prevent hung jobs from blocking the worker indefinitely.
+
+---
+
+## 32. Long-running database transaction in campaign dispatch
+
+**Issue:** The entire dispatch operation (lock + status update + chunked contact processing + job dispatching) was wrapped in a single `DB::transaction()`. With large lists, this transaction could run for minutes.
+
+**Why it matters:** Long-running transactions hold row locks, preventing other operations on the same rows. They also increase the risk of deadlocks, connection timeouts, and innodb lock wait timeouts in MySQL.
+
+**Fix:** Separated the transaction into two phases: (1) a short transaction that acquires the lock and updates the status atomically, and (2) the chunked contact processing outside the transaction. The status update is the critical section — once marked as `sending`, the scheduler won't re-dispatch it, even if the chunking fails midway.
+
+**Trade-off:** If the chunking fails after the transaction commits, some contacts may not have sends created. This is recoverable — a retry mechanism or admin action can resume dispatch for the remaining contacts. The alternative (long transaction) risks worse outcomes: deadlocks, connection pool exhaustion, and cascading failures.
+
+---
+
+## 33. API error responses expose internal details
+
+**Issue:** The default Laravel exception handler returns detailed error messages and stack traces in JSON responses, including model class names, SQL queries, and file paths.
+
+**Why it matters:** Information disclosure — attackers can use internal error details to map the application structure, discover table names, and craft targeted attacks.
+
+**Fix:** Added custom exception rendering in `bootstrap/app.php` for `ModelNotFoundException` and `NotFoundHttpException`. API requests now receive a generic `{"error": "Resource not found."}` instead of model-specific details. In production, `APP_DEBUG=false` hides all stack traces.

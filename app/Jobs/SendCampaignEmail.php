@@ -9,6 +9,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class SendCampaignEmail implements ShouldQueue
 {
@@ -16,6 +17,7 @@ class SendCampaignEmail implements ShouldQueue
 
     public int $tries = 3;
     public array $backoff = [10, 60, 300];
+    public int $timeout = 30;
 
     public function __construct(
         private readonly CampaignSend $campaignSend
@@ -42,7 +44,7 @@ class SendCampaignEmail implements ShouldQueue
     {
         $this->campaignSend->update([
             'status' => 'failed',
-            'error_message' => $exception->getMessage(),
+            'error_message' => Str::limit($exception->getMessage(), 500),
         ]);
 
         Log::error('Campaign send failed', [

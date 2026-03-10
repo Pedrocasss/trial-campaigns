@@ -15,8 +15,8 @@ class StoreContactRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'unique:contacts,email'],
-            'status' => ['sometimes', 'in:active,unsubscribed'],
+            'email' => ['required', 'email:rfc', 'max:255', 'unique:contacts,email'],
+            'status' => ['sometimes', 'string', 'in:active,unsubscribed'],
         ];
     }
 }

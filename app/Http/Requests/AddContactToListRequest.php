@@ -14,7 +14,7 @@ class AddContactToListRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'contact_id' => ['required', 'exists:contacts,id'],
+            'contact_id' => ['required', 'integer', 'exists:contacts,id'],
         ];
     }
 }
