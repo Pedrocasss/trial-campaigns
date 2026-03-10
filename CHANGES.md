@@ -171,3 +171,15 @@
 **Why it matters:** This creates duplicate sends that grow linearly with the number of historical campaigns. Each scheduler tick re-processes the entire campaign history.
 
 **Fix:** Added `->where('status', 'draft')` and `->whereNotNull('scheduled_at')` to the query. Only draft campaigns with a scheduled time in the past are dispatched.
+
+---
+
+## 18. Queue driver using database instead of Redis
+
+**Issue:** The queue connection is set to `database`, meaning every job dispatch and consumption performs INSERT/SELECT/UPDATE/DELETE on the same MySQL instance that serves the application.
+
+**Why it matters:** Under load — e.g., dispatching a campaign to 100k contacts — the queue operations compete with API queries for MySQL connections and I/O. The `jobs` table becomes a bottleneck with constant polling. This degrades both queue throughput and API response times.
+
+**Fix:** Switched `QUEUE_CONNECTION` to `redis`. Added a Redis 7 container to docker-compose. Installed the `phpredis` extension in the Dockerfile. Redis is in-memory, non-blocking, and purpose-built for this workload — it decouples queue processing from the application database entirely.
+
+**Trade-off:** Adds an infrastructure dependency (Redis). For this application's scale, the performance gain far outweighs the operational cost. Redis is already a standard component in Laravel production deployments.
