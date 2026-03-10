@@ -23,14 +23,16 @@ class SendCampaignEmail implements ShouldQueue
 
     public function handle(): void
     {
-        if ($this->campaignSend->status === 'sent') {
+        $send = $this->campaignSend->load(['contact', 'campaign']);
+
+        if ($send->status === 'sent') {
             return;
         }
 
         $this->sendEmail(
-            $this->campaignSend->contact->email,
-            $this->campaignSend->campaign->subject,
-            $this->campaignSend->campaign->body
+            $send->contact->email,
+            $send->campaign->subject,
+            $send->campaign->body
         );
 
         $this->campaignSend->update(['status' => 'sent']);

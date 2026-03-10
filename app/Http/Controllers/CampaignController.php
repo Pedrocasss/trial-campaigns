@@ -25,7 +25,12 @@ class CampaignController extends Controller
 
     public function show(Campaign $campaign): JsonResponse
     {
-        $campaign = Campaign::withSendStats()->findOrFail($campaign->id);
+        $campaign->loadCount([
+            'sends as pending_count' => fn ($q) => $q->where('status', 'pending'),
+            'sends as sent_count' => fn ($q) => $q->where('status', 'sent'),
+            'sends as failed_count' => fn ($q) => $q->where('status', 'failed'),
+            'sends as total_count',
+        ]);
 
         return response()->json($campaign);
     }
