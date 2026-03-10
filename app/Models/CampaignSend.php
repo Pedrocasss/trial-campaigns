@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\CampaignSendStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,13 @@ class CampaignSend extends Model
     use HasFactory;
 
     protected $fillable = ['campaign_id', 'contact_id', 'status', 'error_message'];
+
+    protected function casts(): array
+    {
+        return [
+            'status' => CampaignSendStatus::class,
+        ];
+    }
 
     public function campaign(): BelongsTo
     {

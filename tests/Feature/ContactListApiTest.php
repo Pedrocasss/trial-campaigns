@@ -30,7 +30,7 @@ class ContactListApiTest extends TestCase
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('name', 'VIP Clients');
+            ->assertJsonPath('data.name', 'VIP Clients');
 
         $this->assertDatabaseHas('contact_lists', ['name' => 'VIP Clients']);
     }

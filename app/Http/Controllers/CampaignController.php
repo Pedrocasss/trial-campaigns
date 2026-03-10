@@ -2,43 +2,44 @@
 
 namespace App\Http\Controllers;
 
+use App\Contracts\CampaignRepositoryInterface;
+use App\Enums\CampaignStatus;
 use App\Http\Requests\StoreCampaignRequest;
+use App\Http\Resources\CampaignResource;
 use App\Models\Campaign;
 use App\Services\CampaignService;
 use Illuminate\Http\JsonResponse;
 
 class CampaignController extends Controller
 {
-    public function index(): JsonResponse
-    {
-        $campaigns = Campaign::with('contactList')->withSendStats()->paginate(15);
+    public function __construct(
+        private readonly CampaignRepositoryInterface $campaigns
+    ) {}
 
-        return response()->json($campaigns);
+    public function index()
+    {
+        return CampaignResource::collection($this->campaigns->paginateWithStats());
     }
 
     public function store(StoreCampaignRequest $request): JsonResponse
     {
-        $campaign = Campaign::create($request->validated());
+        $campaign = $this->campaigns->create($request->validated());
 
-        return response()->json($campaign, 201);
+        return (new CampaignResource($campaign))
+            ->response()
+            ->setStatusCode(201);
     }
 
-    public function show(Campaign $campaign): JsonResponse
+    public function show(Campaign $campaign): CampaignResource
     {
-        $campaign->load('contactList');
-        $campaign->loadCount([
-            'sends as pending_count' => fn ($q) => $q->where('status', 'pending'),
-            'sends as sent_count' => fn ($q) => $q->where('status', 'sent'),
-            'sends as failed_count' => fn ($q) => $q->where('status', 'failed'),
-            'sends as total_count',
-        ]);
+        $campaign = $this->campaigns->findWithStats($campaign->id);
 
-        return response()->json($campaign);
+        return new CampaignResource($campaign);
     }
 
     public function dispatch(Campaign $campaign, CampaignService $service): JsonResponse
     {
-        if ($campaign->status !== 'draft') {
+        if ($campaign->status !== CampaignStatus::Draft) {
             return response()->json(['error' => 'Campaign must be in draft status.'], 422);
         }
 

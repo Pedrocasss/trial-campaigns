@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\CampaignStatus;
 use App\Models\Campaign;
 use Closure;
 use Illuminate\Http\Request;
@@ -16,7 +17,7 @@ class EnsureCampaignIsDraft
             $campaign = Campaign::findOrFail($campaign);
         }
 
-        if ($campaign->status !== 'draft') {
+        if ($campaign->status !== CampaignStatus::Draft) {
             return response()->json(['error' => 'Campaign must be in draft status.'], 422);
         }
 
