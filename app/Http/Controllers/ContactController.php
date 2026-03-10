@@ -24,7 +24,9 @@ class ContactController extends Controller
 
     public function unsubscribe(Contact $contact): JsonResponse
     {
-        $contact->update(['status' => 'unsubscribed']);
+        if ($contact->status !== 'unsubscribed') {
+            $contact->update(['status' => 'unsubscribed']);
+        }
 
         return response()->json($contact);
     }

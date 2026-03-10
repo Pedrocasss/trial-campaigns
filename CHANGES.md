@@ -183,3 +183,85 @@
 **Fix:** Switched `QUEUE_CONNECTION` to `redis`. Added a Redis 7 container to docker-compose. Installed the `phpredis` extension in the Dockerfile. Redis is in-memory, non-blocking, and purpose-built for this workload — it decouples queue processing from the application database entirely.
 
 **Trade-off:** Adds an infrastructure dependency (Redis). For this application's scale, the performance gain far outweighs the operational cost. Redis is already a standard component in Laravel production deployments.
+
+---
+
+## 19. Scheduler uses `each()` instead of `cursor()` — memory bloat
+
+**Issue:** The scheduler loads all matching campaigns into memory with `->each()` before iterating.
+
+**Why it matters:** With thousands of scheduled campaigns, this allocates all models in memory at once. A `cursor()` streams one model at a time, keeping memory constant regardless of dataset size.
+
+**Fix:** Replaced `->each()` with `->cursor()->each()` for memory-efficient streaming.
+
+---
+
+## 20. `CampaignService::dispatch()` — race condition on concurrent calls
+
+**Issue:** Two simultaneous dispatch calls (e.g., scheduler + API request) could both read status as `draft`, both set it to `sending`, and both create sends — bypassing idempotency.
+
+**Why it matters:** Without locking, the status check and update are not atomic. Under concurrent load, this leads to duplicate sends and data corruption.
+
+**Fix:** Wrapped the dispatch in a `DB::transaction()` with `lockForUpdate()` on the campaign row. The first caller acquires the lock and proceeds; the second caller blocks until the first finishes, then sees status `sending` and fails with `firstOrFail()`.
+
+**Trade-off:** Pessimistic locking adds a small overhead per dispatch. This is acceptable because campaign dispatch is a low-frequency operation (once per campaign), and correctness is more important than throughput here.
+
+---
+
+## 21. `CampaignService::dispatch()` — `firstOrCreate()` in loop causes N queries
+
+**Issue:** For each contact in the list, `firstOrCreate()` executes a SELECT then an INSERT (if not found). With 100k contacts, this results in 100k–200k queries.
+
+**Why it matters:** This is the single biggest performance bottleneck in the dispatch flow. Each query has network round-trip overhead to MySQL, and the total time scales linearly with list size.
+
+**Fix:** Replaced the per-contact `firstOrCreate()` with a batch `upsert()` per chunk. This inserts up to 500 records in a single query, reducing total queries from N to N/500. After upsert, only pending sends are queried once to dispatch jobs.
+
+---
+
+## 22. Missing composite index on `campaign_sends(campaign_id, status)`
+
+**Issue:** The stats scope queries `campaign_sends` filtered by `campaign_id` and `status`. The existing `index('status')` alone doesn't cover this pattern efficiently.
+
+**Why it matters:** Without a composite index, MySQL must scan all sends for a campaign and then filter by status. With millions of sends, this causes slow aggregation queries on the campaigns list endpoint.
+
+**Fix:** Replaced the single `index('status')` with a composite `index(['campaign_id', 'status'])`. This covers both the stats queries and individual status lookups for a given campaign.
+
+---
+
+## 23. Missing eager loading on `contactList` in campaign endpoints
+
+**Issue:** `CampaignController::index()` and `show()` return campaign data without eager loading the `contactList` relationship. If the response includes contactList data, each campaign triggers an additional query.
+
+**Why it matters:** With 15 campaigns per page, this causes 15 additional queries per request (N+1 pattern). At scale, this multiplies response times.
+
+**Fix:** Added `with('contactList')` to `index()` and `load('contactList')` to `show()`.
+
+---
+
+## 24. Middleware `EnsureCampaignIsDraft` — duplicate query
+
+**Issue:** The middleware calls `Campaign::findOrFail()` even when route model binding has already resolved the campaign model. This executes an unnecessary duplicate query.
+
+**Why it matters:** Every request through this middleware wastes one database query. Under high traffic, these add up.
+
+**Fix:** Check if the route parameter is already a Campaign model instance (from route model binding) before querying. Falls back to `findOrFail()` only when needed.
+
+---
+
+## 25. `ContactController::unsubscribe()` — unnecessary UPDATE
+
+**Issue:** The endpoint always executes `UPDATE contacts SET status = 'unsubscribed'` even if the contact is already unsubscribed.
+
+**Why it matters:** Unnecessary write operations on the database. Minor impact individually, but indicates a lack of defensive coding.
+
+**Fix:** Added a status check before the update — only writes to the database if the contact isn't already unsubscribed.
+
+---
+
+## 26. `Contact` model — repeated `where('status', 'active')` filter
+
+**Issue:** The query `->where('status', 'active')` appears in multiple places (service, scheduler). This duplicates business logic across layers.
+
+**Why it matters:** If the definition of "active" changes (e.g., adding a `verified` status), every occurrence must be updated. Missed updates cause subtle bugs.
+
+**Fix:** Added a `scopeActive()` query scope to the Contact model. All consumers now use `->active()` instead of `->where('status', 'active')`.
