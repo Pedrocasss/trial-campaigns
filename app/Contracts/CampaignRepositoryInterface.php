@@ -14,8 +14,6 @@ interface CampaignRepositoryInterface
 
     public function findDraftForUpdate(int $id): mixed;
 
-    public function updateStatus(int $id, string $status): void;
-
     public function getDueForDispatch(): iterable;
 
     public function getActiveContactsForCampaign(int $campaignId, int $chunkSize, callable $callback): void;

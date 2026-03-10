@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Contracts\CampaignRepositoryInterface;
-use App\Enums\CampaignStatus;
 use App\Http\Requests\StoreCampaignRequest;
 use App\Http\Resources\CampaignResource;
 use App\Models\Campaign;
@@ -39,10 +38,6 @@ class CampaignController extends Controller
 
     public function dispatch(Campaign $campaign, CampaignService $service): JsonResponse
     {
-        if ($campaign->status !== CampaignStatus::Draft) {
-            return response()->json(['error' => 'Campaign must be in draft status.'], 422);
-        }
-
         $service->dispatch($campaign);
 
         return response()->json(['message' => 'Campaign dispatch started.']);

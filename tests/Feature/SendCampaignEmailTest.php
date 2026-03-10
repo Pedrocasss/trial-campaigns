@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Contracts\EmailSenderInterface;
+use App\Enums\CampaignSendStatus;
 use App\Jobs\SendCampaignEmail;
 use App\Models\Campaign;
 use App\Models\CampaignSend;
@@ -21,7 +22,7 @@ class SendCampaignEmailTest extends TestCase
         $send = CampaignSend::factory()->create([
             'campaign_id' => $campaign->id,
             'contact_id' => $contact->id,
-            'status' => 'pending',
+            'status' => CampaignSendStatus::Pending,
         ]);
 
         $sender = $this->mock(EmailSenderInterface::class);
@@ -34,13 +35,13 @@ class SendCampaignEmailTest extends TestCase
 
         $this->assertDatabaseHas('campaign_sends', [
             'id' => $send->id,
-            'status' => 'sent',
+            'status' => CampaignSendStatus::Sent->value,
         ]);
     }
 
     public function test_skips_already_sent(): void
     {
-        $send = CampaignSend::factory()->create(['status' => 'sent']);
+        $send = CampaignSend::factory()->create(['status' => CampaignSendStatus::Sent]);
 
         $sender = $this->mock(EmailSenderInterface::class);
         $sender->shouldNotReceive('send');
@@ -51,14 +52,14 @@ class SendCampaignEmailTest extends TestCase
 
     public function test_failed_marks_send_as_failed(): void
     {
-        $send = CampaignSend::factory()->create(['status' => 'pending']);
+        $send = CampaignSend::factory()->create(['status' => CampaignSendStatus::Pending]);
 
         $job = new SendCampaignEmail($send);
         $job->failed(new \RuntimeException('SMTP connection refused'));
 
         $this->assertDatabaseHas('campaign_sends', [
             'id' => $send->id,
-            'status' => 'failed',
+            'status' => CampaignSendStatus::Failed->value,
         ]);
     }
 

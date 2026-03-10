@@ -51,11 +51,6 @@ class EloquentCampaignRepository implements CampaignRepositoryInterface
         });
     }
 
-    public function updateStatus(int $id, string $status): void
-    {
-        Campaign::where('id', $id)->update(['status' => $status]);
-    }
-
     public function getDueForDispatch(): iterable
     {
         return Campaign::where('status', CampaignStatus::Draft)

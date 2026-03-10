@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CampaignSendStatus;
+use App\Enums\CampaignStatus;
+use App\Enums\ContactStatus;
 use App\Models\Campaign;
 use App\Models\CampaignSend;
 use App\Models\Contact;
@@ -18,11 +21,11 @@ class CampaignApiTest extends TestCase
         $campaign = Campaign::factory()->create();
         CampaignSend::factory()->count(3)->create([
             'campaign_id' => $campaign->id,
-            'status' => 'sent',
+            'status' => CampaignSendStatus::Sent,
         ]);
         CampaignSend::factory()->count(2)->create([
             'campaign_id' => $campaign->id,
-            'status' => 'pending',
+            'status' => CampaignSendStatus::Pending,
         ]);
 
         $response = $this->getJson('/api/campaigns');
@@ -48,7 +51,7 @@ class CampaignApiTest extends TestCase
 
         $this->assertDatabaseHas('campaigns', [
             'subject' => 'Welcome Email',
-            'status' => 'draft',
+            'status' => CampaignStatus::Draft->value,
         ]);
     }
 
@@ -57,7 +60,7 @@ class CampaignApiTest extends TestCase
         $campaign = Campaign::factory()->create();
         CampaignSend::factory()->count(2)->create([
             'campaign_id' => $campaign->id,
-            'status' => 'failed',
+            'status' => CampaignSendStatus::Failed,
         ]);
 
         $response = $this->getJson("/api/campaigns/{$campaign->id}");
@@ -70,12 +73,12 @@ class CampaignApiTest extends TestCase
     public function test_can_dispatch_draft_campaign(): void
     {
         $list = ContactList::factory()->create();
-        $contacts = Contact::factory(3)->create(['status' => 'active']);
+        $contacts = Contact::factory(3)->create(['status' => ContactStatus::Active]);
         $list->contacts()->attach($contacts->pluck('id'));
 
         $campaign = Campaign::factory()->create([
             'contact_list_id' => $list->id,
-            'status' => 'draft',
+            'status' => CampaignStatus::Draft,
         ]);
 
         $response = $this->postJson("/api/campaigns/{$campaign->id}/dispatch");
@@ -85,7 +88,7 @@ class CampaignApiTest extends TestCase
 
         $this->assertDatabaseHas('campaigns', [
             'id' => $campaign->id,
-            'status' => 'sending',
+            'status' => CampaignStatus::Sending->value,
         ]);
 
         $this->assertDatabaseCount('campaign_sends', 3);
@@ -93,7 +96,7 @@ class CampaignApiTest extends TestCase
 
     public function test_cannot_dispatch_non_draft_campaign(): void
     {
-        $campaign = Campaign::factory()->create(['status' => 'sending']);
+        $campaign = Campaign::factory()->create(['status' => CampaignStatus::Sending]);
 
         $response = $this->postJson("/api/campaigns/{$campaign->id}/dispatch");
 
@@ -104,14 +107,14 @@ class CampaignApiTest extends TestCase
     public function test_dispatch_only_sends_to_active_contacts(): void
     {
         $list = ContactList::factory()->create();
-        $active = Contact::factory(2)->create(['status' => 'active']);
-        $unsubscribed = Contact::factory(1)->create(['status' => 'unsubscribed']);
+        $active = Contact::factory(2)->create(['status' => ContactStatus::Active]);
+        $unsubscribed = Contact::factory(1)->create(['status' => ContactStatus::Unsubscribed]);
         $list->contacts()->attach($active->pluck('id'));
         $list->contacts()->attach($unsubscribed->pluck('id'));
 
         $campaign = Campaign::factory()->create([
             'contact_list_id' => $list->id,
-            'status' => 'draft',
+            'status' => CampaignStatus::Draft,
         ]);
 
         $this->postJson("/api/campaigns/{$campaign->id}/dispatch");
@@ -122,17 +125,17 @@ class CampaignApiTest extends TestCase
     public function test_dispatch_is_idempotent(): void
     {
         $list = ContactList::factory()->create();
-        $contacts = Contact::factory(3)->create(['status' => 'active']);
+        $contacts = Contact::factory(3)->create(['status' => ContactStatus::Active]);
         $list->contacts()->attach($contacts->pluck('id'));
 
         $campaign = Campaign::factory()->create([
             'contact_list_id' => $list->id,
-            'status' => 'draft',
+            'status' => CampaignStatus::Draft,
         ]);
 
         $this->postJson("/api/campaigns/{$campaign->id}/dispatch");
 
-        $campaign->update(['status' => 'draft']);
+        $campaign->update(['status' => CampaignStatus::Draft]);
         $this->postJson("/api/campaigns/{$campaign->id}/dispatch");
 
         $this->assertDatabaseCount('campaign_sends', 3);
