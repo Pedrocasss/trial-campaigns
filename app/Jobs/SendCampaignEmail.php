@@ -14,32 +14,39 @@ class SendCampaignEmail implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    public int $tries = 3;
+    public array $backoff = [10, 60, 300];
 
     public function __construct(
-        private readonly int $campaignSendId
+        private readonly CampaignSend $campaignSend
     ) {}
 
     public function handle(): void
     {
-        $send = CampaignSend::find($this->campaignSendId);
-
-        if (!$send) {
+        if ($this->campaignSend->status === 'sent') {
             return;
         }
 
-        try {
-            $this->sendEmail($send->contact->email, $send->campaign->subject, $send->campaign->body);
+        $this->sendEmail(
+            $this->campaignSend->contact->email,
+            $this->campaignSend->campaign->subject,
+            $this->campaignSend->campaign->body
+        );
 
-            $send->update(['status' => 'sent']);
+        $this->campaignSend->update(['status' => 'sent']);
+    }
 
-        } catch (\Exception $e) {
-            $send->update([
-                'status'        => 'failed',
-                'error_message' => $e->getMessage(),
-            ]);
+    public function failed(\Throwable $exception): void
+    {
+        $this->campaignSend->update([
+            'status' => 'failed',
+            'error_message' => $exception->getMessage(),
+        ]);
 
-            Log::error('Campaign send failed', ['send_id' => $send->id, 'error' => $e->getMessage()]);
-        }
+        Log::error('Campaign send failed', [
+            'send_id' => $this->campaignSend->id,
+            'error' => $exception->getMessage(),
+        ]);
     }
 
     private function sendEmail(string $to, string $subject, string $body): void
