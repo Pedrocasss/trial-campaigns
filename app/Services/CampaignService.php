@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Contracts\CampaignRepositoryInterface;
+use App\Enums\CampaignSendStatus;
 use App\Jobs\SendCampaignEmail;
 use App\Models\Campaign;
 
@@ -24,7 +25,7 @@ class CampaignService
                 $records = $contacts->map(fn ($contact) => [
                     'campaign_id' => $locked->id,
                     'contact_id' => $contact->id,
-                    'status' => 'pending',
+                    'status' => CampaignSendStatus::Pending->value,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ])->toArray();

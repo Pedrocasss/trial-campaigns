@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Contracts\ContactListRepositoryInterface;
 use App\Http\Requests\AddContactToListRequest;
 use App\Http\Requests\StoreContactListRequest;
+use App\Http\Resources\ContactListResource;
 use App\Models\ContactList;
 use Illuminate\Http\JsonResponse;
 
@@ -14,16 +15,18 @@ class ContactListController extends Controller
         private readonly ContactListRepositoryInterface $contactLists
     ) {}
 
-    public function index(): JsonResponse
+    public function index()
     {
-        return response()->json($this->contactLists->paginateWithContactsCount());
+        return ContactListResource::collection($this->contactLists->paginateWithContactsCount());
     }
 
     public function store(StoreContactListRequest $request): JsonResponse
     {
         $list = $this->contactLists->create($request->validated());
 
-        return response()->json($list, 201);
+        return (new ContactListResource($list))
+            ->response()
+            ->setStatusCode(201);
     }
 
     public function addContact(AddContactToListRequest $request, ContactList $contactList): JsonResponse

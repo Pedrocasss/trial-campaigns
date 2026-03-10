@@ -378,3 +378,43 @@ Controllers now depend on interfaces injected via constructor. The `AppServicePr
 **Why it matters:** Without DI, the service cannot be tested in isolation. Its behaviour is permanently tied to the database layer. This violates the Dependency Inversion Principle and makes unit testing impractical.
 
 **Fix:** Refactored `CampaignService` to receive `CampaignRepositoryInterface` via constructor injection. All database operations (lock, upsert, query) go through the repository. The scheduler resolves both the repository and the service via the container, respecting the dependency chain.
+
+---
+
+## 37. Status fields use raw strings instead of PHP Enums
+
+**Issue:** All status fields (`campaigns.status`, `contacts.status`, `campaign_sends.status`) are compared and assigned using raw strings like `'draft'`, `'active'`, `'pending'` scattered across models, repositories, controllers, middleware, services, jobs, and factories.
+
+**Why it matters:** Raw strings are error-prone — a typo like `'dratf'` compiles and runs without error but causes silent bugs. There is no IDE autocompletion, no static analysis support, and no centralised definition of valid statuses. PHP 8.1+ introduced backed enums specifically for this use case.
+
+**Fix:** Created three backed enums: `CampaignStatus` (Draft, Sending, Sent), `ContactStatus` (Active, Unsubscribed), and `CampaignSendStatus` (Pending, Sent, Failed). Added enum casts to all three models. Updated all consumers — controllers, middleware, repositories, services, jobs, factories — to use enum values instead of raw strings.
+
+---
+
+## 38. Controllers return raw Eloquent models as JSON
+
+**Issue:** All controllers returned Eloquent models directly via `response()->json($model)`. This exposes every model attribute (including internal fields, timestamps, and any future sensitive columns) in the API response.
+
+**Why it matters:** Without a transformation layer, the API contract is tightly coupled to the database schema. Adding a column to the database automatically exposes it in the API. There is no control over field naming, formatting, or conditional inclusion. Laravel's API Resources exist precisely for this purpose.
+
+**Fix:** Created `ContactResource`, `ContactListResource`, and `CampaignResource` — each explicitly defines which fields appear in the response. Controllers now return resources instead of raw models. `CampaignResource` uses `whenLoaded()` for the contactList relationship and `whenHas()` for computed stats, ensuring clean conditional output.
+
+---
+
+## 39. Default ExampleTest files present in test suite
+
+**Issue:** The default `tests/Feature/ExampleTest.php` and `tests/Unit/ExampleTest.php` shipped by Laravel were still present. They test that the application returns a 200 on `/` — which doesn't exist in this API-only application.
+
+**Why it matters:** Dead tests that test nothing useful add noise to the test suite and can give a false sense of coverage. They also signal that the test setup was never cleaned up.
+
+**Fix:** Deleted both files.
+
+---
+
+## 40. No tests for the SendCampaignEmail job
+
+**Issue:** The `SendCampaignEmail` job — the most critical piece of the dispatch pipeline — had no dedicated tests. Its retry logic, idempotency check, and failure handling were untested.
+
+**Why it matters:** The job handles email delivery, status tracking, and error recording. Without tests, regressions in retry behaviour, idempotency, or failure handling would go undetected. The requirements explicitly ask for tests.
+
+**Fix:** Created `SendCampaignEmailTest` with 4 tests: (1) sends email and marks as sent, (2) skips already-sent sends (idempotency), (3) marks send as failed on exception, (4) verifies retry configuration (tries, backoff, timeout).

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Contracts\EmailSenderInterface;
+use App\Enums\CampaignSendStatus;
 use App\Models\CampaignSend;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -28,7 +29,7 @@ class SendCampaignEmail implements ShouldQueue
     {
         $send = $this->campaignSend->load(['contact', 'campaign']);
 
-        if ($send->status === 'sent') {
+        if ($send->status === CampaignSendStatus::Sent) {
             return;
         }
 
@@ -38,13 +39,13 @@ class SendCampaignEmail implements ShouldQueue
             $send->campaign->body
         );
 
-        $this->campaignSend->update(['status' => 'sent']);
+        $this->campaignSend->update(['status' => CampaignSendStatus::Sent]);
     }
 
     public function failed(\Throwable $exception): void
     {
         $this->campaignSend->update([
-            'status' => 'failed',
+            'status' => CampaignSendStatus::Failed,
             'error_message' => Str::limit($exception->getMessage(), 500),
         ]);
 

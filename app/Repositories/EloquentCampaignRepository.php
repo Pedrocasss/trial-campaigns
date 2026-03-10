@@ -3,6 +3,8 @@
 namespace App\Repositories;
 
 use App\Contracts\CampaignRepositoryInterface;
+use App\Enums\CampaignSendStatus;
+use App\Enums\CampaignStatus;
 use App\Models\Campaign;
 use App\Models\CampaignSend;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -26,9 +28,9 @@ class EloquentCampaignRepository implements CampaignRepositoryInterface
 
         $campaign->load('contactList');
         $campaign->loadCount([
-            'sends as pending_count' => fn ($q) => $q->where('status', 'pending'),
-            'sends as sent_count' => fn ($q) => $q->where('status', 'sent'),
-            'sends as failed_count' => fn ($q) => $q->where('status', 'failed'),
+            'sends as pending_count' => fn ($q) => $q->where('status', CampaignSendStatus::Pending),
+            'sends as sent_count' => fn ($q) => $q->where('status', CampaignSendStatus::Sent),
+            'sends as failed_count' => fn ($q) => $q->where('status', CampaignSendStatus::Failed),
             'sends as total_count',
         ]);
 
@@ -39,11 +41,11 @@ class EloquentCampaignRepository implements CampaignRepositoryInterface
     {
         return DB::transaction(function () use ($id) {
             $campaign = Campaign::where('id', $id)
-                ->where('status', 'draft')
+                ->where('status', CampaignStatus::Draft)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $campaign->update(['status' => 'sending']);
+            $campaign->update(['status' => CampaignStatus::Sending]);
 
             return $campaign;
         });
@@ -56,7 +58,7 @@ class EloquentCampaignRepository implements CampaignRepositoryInterface
 
     public function getDueForDispatch(): iterable
     {
-        return Campaign::where('status', 'draft')
+        return Campaign::where('status', CampaignStatus::Draft)
             ->whereNotNull('scheduled_at')
             ->where('scheduled_at', '<=', now())
             ->cursor();
@@ -80,7 +82,7 @@ class EloquentCampaignRepository implements CampaignRepositoryInterface
     {
         return CampaignSend::where('campaign_id', $campaignId)
             ->whereIn('contact_id', $contactIds)
-            ->where('status', 'pending')
+            ->where('status', CampaignSendStatus::Pending)
             ->get();
     }
 }

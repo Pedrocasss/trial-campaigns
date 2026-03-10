@@ -17,7 +17,7 @@ class ContactApiTest extends TestCase
         $response = $this->getJson('/api/contacts');
 
         $response->assertOk()
-            ->assertJsonPath('total', 20)
+            ->assertJsonPath('meta.total', 20)
             ->assertJsonCount(15, 'data');
     }
 
@@ -29,8 +29,8 @@ class ContactApiTest extends TestCase
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('name', 'John Doe')
-            ->assertJsonPath('email', 'john@example.com');
+            ->assertJsonPath('data.name', 'John Doe')
+            ->assertJsonPath('data.email', 'john@example.com');
 
         $this->assertDatabaseHas('contacts', [
             'email' => 'john@example.com',
@@ -66,7 +66,7 @@ class ContactApiTest extends TestCase
         $response = $this->postJson("/api/contacts/{$contact->id}/unsubscribe");
 
         $response->assertOk()
-            ->assertJsonPath('status', 'unsubscribed');
+            ->assertJsonPath('data.status', 'unsubscribed');
 
         $this->assertDatabaseHas('contacts', [
             'id' => $contact->id,

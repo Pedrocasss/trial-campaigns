@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Contracts\ContactRepositoryInterface;
+use App\Enums\ContactStatus;
 use App\Models\Contact;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
@@ -27,8 +28,8 @@ class EloquentContactRepository implements ContactRepositoryInterface
     {
         $contact = $this->findOrFail($id);
 
-        if ($contact->status !== 'unsubscribed') {
-            $contact->update(['status' => 'unsubscribed']);
+        if ($contact->status !== ContactStatus::Unsubscribed) {
+            $contact->update(['status' => ContactStatus::Unsubscribed]);
         }
 
         return $contact;

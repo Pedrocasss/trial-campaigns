@@ -44,7 +44,7 @@ class CampaignApiTest extends TestCase
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('subject', 'Welcome Email');
+            ->assertJsonPath('data.subject', 'Welcome Email');
 
         $this->assertDatabaseHas('campaigns', [
             'subject' => 'Welcome Email',
@@ -63,8 +63,8 @@ class CampaignApiTest extends TestCase
         $response = $this->getJson("/api/campaigns/{$campaign->id}");
 
         $response->assertOk()
-            ->assertJsonPath('failed_count', 2)
-            ->assertJsonPath('total_count', 2);
+            ->assertJsonPath('data.failed_count', 2)
+            ->assertJsonPath('data.total_count', 2);
     }
 
     public function test_can_dispatch_draft_campaign(): void
