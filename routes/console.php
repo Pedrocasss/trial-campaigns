@@ -1,8 +1,14 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
+use App\Contracts\CampaignRepositoryInterface;
+use App\Services\CampaignService;
+use Illuminate\Support\Facades\Schedule;
 
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+Schedule::call(function () {
+    $repository = app(CampaignRepositoryInterface::class);
+    $service = app(CampaignService::class);
+
+    foreach ($repository->getDueForDispatch() as $campaign) {
+        $service->dispatch($campaign);
+    }
+})->everyMinute();

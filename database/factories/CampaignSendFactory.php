@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\CampaignSendStatus;
 use App\Models\Campaign;
 use App\Models\CampaignSend;
 use App\Models\Contact;
@@ -16,7 +17,7 @@ class CampaignSendFactory extends Factory
         return [
             'campaign_id' => Campaign::factory(),
             'contact_id'  => Contact::factory(),
-            'status'      => fake()->randomElement(['pending', 'sent', 'failed']),
+            'status'      => fake()->randomElement(CampaignSendStatus::cases()),
         ];
     }
 }

@@ -2,50 +2,45 @@
 
 namespace App\Services;
 
+use App\Contracts\CampaignRepositoryInterface;
+use App\Enums\CampaignSendStatus;
 use App\Jobs\SendCampaignEmail;
 use App\Models\Campaign;
-use App\Models\CampaignSend;
 
 class CampaignService
 {
-    /**
-     * Dispatch a campaign to all active contacts in its list.
-     */
+    public function __construct(
+        private readonly CampaignRepositoryInterface $campaigns
+    ) {}
+
     public function dispatch(Campaign $campaign): void
     {
-        $contacts = $campaign->contactList->contacts()
-            ->where('status', 'active')
-            ->get();
+        $locked = $this->campaigns->findDraftForUpdate($campaign->id);
 
-        foreach ($contacts as $contact) {
-            $send = CampaignSend::create([
-                'campaign_id' => $campaign->id,
-                'contact_id'  => $contact->id,
-                'status'      => 'pending',
-            ]);
+        $this->campaigns->getActiveContactsForCampaign(
+            $locked->id,
+            500,
+            function ($contacts) use ($locked) {
+                $now = now();
+                $records = $contacts->map(fn ($contact) => [
+                    'campaign_id' => $locked->id,
+                    'contact_id' => $contact->id,
+                    'status' => CampaignSendStatus::Pending->value,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ])->toArray();
 
-            SendCampaignEmail::dispatch($send->id);
-        }
+                $this->campaigns->upsertSends($records, ['campaign_id', 'contact_id']);
 
-        $campaign->update(['status' => 'sending']);
-    }
+                $sends = $this->campaigns->getPendingSends(
+                    $locked->id,
+                    $contacts->pluck('id')->toArray()
+                );
 
-    public function buildPayload(Campaign $campaign, array $extra = []): array
-    {
-        $base = [
-            'subject' => $campaign->subject,
-            'body'    => $campaign->body,
-        ];
-
-        return [...$base, ...$extra];
-    }
-
-    public function resolveReplyTo(Campaign $campaign)
-    {
-        if (empty($campaign->reply_to)) {
-            return null;
-        }
-
-        return $campaign->reply_to;
+                foreach ($sends as $send) {
+                    SendCampaignEmail::dispatch($send);
+                }
+            }
+        );
     }
 }

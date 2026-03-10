@@ -11,26 +11,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-    environment:
-      - DB_CONNECTION=mysql
-      - DB_HOST=mysql
-      - DB_PORT=3306
-      - DB_DATABASE=campaigns
-      - DB_USERNAME=laravel
-      - DB_PASSWORD=secret
-    networks:
-      - campaign-net
-
-  queue:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: campaign-queue
-    command: php artisan queue:work --sleep=3 --tries=3 --backoff=10
-    volumes:
-      - .:/var/www
-    depends_on:
-      mysql:
+      redis:
         condition: service_healthy
     environment:
       - DB_CONNECTION=mysql
@@ -39,6 +20,33 @@ services:
       - DB_DATABASE=campaigns
       - DB_USERNAME=laravel
       - DB_PASSWORD=secret
+      - QUEUE_CONNECTION=redis
+      - REDIS_HOST=redis
+    networks:
+      - campaign-net
+
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: campaign-queue
+    command: php artisan queue:work redis --sleep=3 --tries=3 --backoff=10
+    volumes:
+      - .:/var/www
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=campaigns
+      - DB_USERNAME=laravel
+      - DB_PASSWORD=secret
+      - QUEUE_CONNECTION=redis
+      - REDIS_HOST=redis
     networks:
       - campaign-net
 
@@ -56,6 +64,19 @@ services:
       - mysql-data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - campaign-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: campaign-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10

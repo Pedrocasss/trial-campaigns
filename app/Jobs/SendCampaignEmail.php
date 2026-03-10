@@ -2,6 +2,8 @@
 
 namespace App\Jobs;
 
+use App\Contracts\EmailSenderInterface;
+use App\Enums\CampaignSendStatus;
 use App\Models\CampaignSend;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -9,41 +11,47 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class SendCampaignEmail implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    public int $tries = 3;
+    public array $backoff = [10, 60, 300];
+    public int $timeout = 30;
 
     public function __construct(
-        private readonly int $campaignSendId
+        private readonly CampaignSend $campaignSend
     ) {}
 
-    public function handle(): void
+    public function handle(EmailSenderInterface $sender): void
     {
-        $send = CampaignSend::find($this->campaignSendId);
+        $send = $this->campaignSend->load(['contact', 'campaign']);
 
-        if (!$send) {
+        if ($send->status === CampaignSendStatus::Sent) {
             return;
         }
 
-        try {
-            $this->sendEmail($send->contact->email, $send->campaign->subject, $send->campaign->body);
+        $sender->send(
+            $send->contact->email,
+            $send->campaign->subject,
+            $send->campaign->body
+        );
 
-            $send->update(['status' => 'sent']);
-
-        } catch (\Exception $e) {
-            $send->update([
-                'status'        => 'failed',
-                'error_message' => $e->getMessage(),
-            ]);
-
-            Log::error('Campaign send failed', ['send_id' => $send->id, 'error' => $e->getMessage()]);
-        }
+        $this->campaignSend->update(['status' => CampaignSendStatus::Sent]);
     }
 
-    private function sendEmail(string $to, string $subject, string $body): void
+    public function failed(\Throwable $exception): void
     {
-        Log::info("Sending email to {$to}: {$subject}");
+        $this->campaignSend->update([
+            'status' => CampaignSendStatus::Failed,
+            'error_message' => Str::limit($exception->getMessage(), 500),
+        ]);
+
+        Log::error('Campaign send failed', [
+            'send_id' => $this->campaignSend->id,
+            'error' => $exception->getMessage(),
+        ]);
     }
 }

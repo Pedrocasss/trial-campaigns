@@ -2,8 +2,12 @@
 
 namespace App\Models;
 
+use App\Enums\CampaignSendStatus;
+use App\Enums\CampaignStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Campaign extends Model
 {
@@ -11,30 +15,31 @@ class Campaign extends Model
 
     protected $fillable = ['subject', 'body', 'contact_list_id', 'status', 'scheduled_at'];
 
-    
-    protected $casts = [
-        'status' => 'string',
-    ];
+    protected function casts(): array
+    {
+        return [
+            'status' => CampaignStatus::class,
+            'scheduled_at' => 'datetime',
+        ];
+    }
 
-    public function contactList(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function contactList(): BelongsTo
     {
         return $this->belongsTo(ContactList::class);
     }
 
-    public function sends(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function sends(): HasMany
     {
         return $this->hasMany(CampaignSend::class);
     }
 
-    public function getStatsAttribute(): array
+    public function scopeWithSendStats($query)
     {
-        $sends = $this->sends;
-
-        return [
-            'pending' => $sends->where('status', 'pending')->count(),
-            'sent'    => $sends->where('status', 'sent')->count(),
-            'failed'  => $sends->where('status', 'failed')->count(),
-            'total'   => $sends->count(),
-        ];
+        return $query->withCount([
+            'sends as pending_count' => fn ($q) => $q->where('status', CampaignSendStatus::Pending),
+            'sends as sent_count' => fn ($q) => $q->where('status', CampaignSendStatus::Sent),
+            'sends as failed_count' => fn ($q) => $q->where('status', CampaignSendStatus::Failed),
+            'sends as total_count',
+        ]);
     }
 }

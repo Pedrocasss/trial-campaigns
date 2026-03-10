@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\ContactStatus;
 use App\Models\Contact;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -14,7 +15,7 @@ class ContactFactory extends Factory
         return [
             'name'   => fake()->name(),
             'email'  => fake()->unique()->safeEmail(),
-            'status' => fake()->randomElement(['active', 'active', 'active', 'unsubscribed']),
+            'status' => fake()->randomElement([ContactStatus::Active, ContactStatus::Active, ContactStatus::Active, ContactStatus::Unsubscribed]),
         ];
     }
 }
