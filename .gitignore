@@ -24,3 +24,11 @@ Homestead.yaml
 Thumbs.db
 /.claude
 /database/database.sqlite
+
+# Docker
+/docker/volumes/
+
+# Project analysis files (not deliverables)
+challenge-requirements.md
+project-structure.md
+code-review.md

@@ -1,0 +1,70 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: campaign-app
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/var/www
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=campaigns
+      - DB_USERNAME=laravel
+      - DB_PASSWORD=secret
+    networks:
+      - campaign-net
+
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: campaign-queue
+    command: php artisan queue:work --sleep=3 --tries=3 --backoff=10
+    volumes:
+      - .:/var/www
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=campaigns
+      - DB_USERNAME=laravel
+      - DB_PASSWORD=secret
+    networks:
+      - campaign-net
+
+  mysql:
+    image: mysql:8.0
+    container_name: campaign-mysql
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_DATABASE: campaigns
+      MYSQL_USER: laravel
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: secret
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - campaign-net
+
+volumes:
+  mysql-data:
+
+networks:
+  campaign-net:
+    driver: bridge
