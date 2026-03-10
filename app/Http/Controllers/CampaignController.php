@@ -11,7 +11,7 @@ class CampaignController extends Controller
 {
     public function index(): JsonResponse
     {
-        $campaigns = Campaign::withSendStats()->paginate(15);
+        $campaigns = Campaign::with('contactList')->withSendStats()->paginate(15);
 
         return response()->json($campaigns);
     }
@@ -25,6 +25,7 @@ class CampaignController extends Controller
 
     public function show(Campaign $campaign): JsonResponse
     {
+        $campaign->load('contactList');
         $campaign->loadCount([
             'sends as pending_count' => fn ($q) => $q->where('status', 'pending'),
             'sends as sent_count' => fn ($q) => $q->where('status', 'sent'),

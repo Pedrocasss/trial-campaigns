@@ -183,3 +183,159 @@
 **Fix:** Switched `QUEUE_CONNECTION` to `redis`. Added a Redis 7 container to docker-compose. Installed the `phpredis` extension in the Dockerfile. Redis is in-memory, non-blocking, and purpose-built for this workload — it decouples queue processing from the application database entirely.
 
 **Trade-off:** Adds an infrastructure dependency (Redis). For this application's scale, the performance gain far outweighs the operational cost. Redis is already a standard component in Laravel production deployments.
+
+---
+
+## 19. Scheduler uses `each()` instead of `cursor()` — memory bloat
+
+**Issue:** The scheduler loads all matching campaigns into memory with `->each()` before iterating.
+
+**Why it matters:** With thousands of scheduled campaigns, this allocates all models in memory at once. A `cursor()` streams one model at a time, keeping memory constant regardless of dataset size.
+
+**Fix:** Replaced `->each()` with `->cursor()->each()` for memory-efficient streaming.
+
+---
+
+## 20. `CampaignService::dispatch()` — race condition on concurrent calls
+
+**Issue:** Two simultaneous dispatch calls (e.g., scheduler + API request) could both read status as `draft`, both set it to `sending`, and both create sends — bypassing idempotency.
+
+**Why it matters:** Without locking, the status check and update are not atomic. Under concurrent load, this leads to duplicate sends and data corruption.
+
+**Fix:** Wrapped the dispatch in a `DB::transaction()` with `lockForUpdate()` on the campaign row. The first caller acquires the lock and proceeds; the second caller blocks until the first finishes, then sees status `sending` and fails with `firstOrFail()`.
+
+**Trade-off:** Pessimistic locking adds a small overhead per dispatch. This is acceptable because campaign dispatch is a low-frequency operation (once per campaign), and correctness is more important than throughput here.
+
+---
+
+## 21. `CampaignService::dispatch()` — `firstOrCreate()` in loop causes N queries
+
+**Issue:** For each contact in the list, `firstOrCreate()` executes a SELECT then an INSERT (if not found). With 100k contacts, this results in 100k–200k queries.
+
+**Why it matters:** This is the single biggest performance bottleneck in the dispatch flow. Each query has network round-trip overhead to MySQL, and the total time scales linearly with list size.
+
+**Fix:** Replaced the per-contact `firstOrCreate()` with a batch `upsert()` per chunk. This inserts up to 500 records in a single query, reducing total queries from N to N/500. After upsert, only pending sends are queried once to dispatch jobs.
+
+---
+
+## 22. Missing composite index on `campaign_sends(campaign_id, status)`
+
+**Issue:** The stats scope queries `campaign_sends` filtered by `campaign_id` and `status`. The existing `index('status')` alone doesn't cover this pattern efficiently.
+
+**Why it matters:** Without a composite index, MySQL must scan all sends for a campaign and then filter by status. With millions of sends, this causes slow aggregation queries on the campaigns list endpoint.
+
+**Fix:** Replaced the single `index('status')` with a composite `index(['campaign_id', 'status'])`. This covers both the stats queries and individual status lookups for a given campaign.
+
+---
+
+## 23. Missing eager loading on `contactList` in campaign endpoints
+
+**Issue:** `CampaignController::index()` and `show()` return campaign data without eager loading the `contactList` relationship. If the response includes contactList data, each campaign triggers an additional query.
+
+**Why it matters:** With 15 campaigns per page, this causes 15 additional queries per request (N+1 pattern). At scale, this multiplies response times.
+
+**Fix:** Added `with('contactList')` to `index()` and `load('contactList')` to `show()`.
+
+---
+
+## 24. Middleware `EnsureCampaignIsDraft` — duplicate query
+
+**Issue:** The middleware calls `Campaign::findOrFail()` even when route model binding has already resolved the campaign model. This executes an unnecessary duplicate query.
+
+**Why it matters:** Every request through this middleware wastes one database query. Under high traffic, these add up.
+
+**Fix:** Check if the route parameter is already a Campaign model instance (from route model binding) before querying. Falls back to `findOrFail()` only when needed.
+
+---
+
+## 25. `ContactController::unsubscribe()` — unnecessary UPDATE
+
+**Issue:** The endpoint always executes `UPDATE contacts SET status = 'unsubscribed'` even if the contact is already unsubscribed.
+
+**Why it matters:** Unnecessary write operations on the database. Minor impact individually, but indicates a lack of defensive coding.
+
+**Fix:** Added a status check before the update — only writes to the database if the contact isn't already unsubscribed.
+
+---
+
+## 26. `Contact` model — repeated `where('status', 'active')` filter
+
+**Issue:** The query `->where('status', 'active')` appears in multiple places (service, scheduler). This duplicates business logic across layers.
+
+**Why it matters:** If the definition of "active" changes (e.g., adding a `verified` status), every occurrence must be updated. Missed updates cause subtle bugs.
+
+**Fix:** Added a `scopeActive()` query scope to the Contact model. All consumers now use `->active()` instead of `->where('status', 'active')`.
+
+---
+
+## 27. No rate limiting on API endpoints
+
+**Issue:** All API endpoints accept unlimited requests with no throttling.
+
+**Why it matters:** Without rate limiting, a malicious actor (or a misconfigured client) can flood the API with requests. The dispatch endpoint is particularly dangerous — spamming it could queue millions of jobs. This is a denial-of-service vector.
+
+**Fix:** Wrapped all API routes in `throttle:60,1` middleware — 60 requests per minute per IP. Laravel handles the 429 Too Many Requests response automatically.
+
+---
+
+## 28. Weak email validation on contact creation
+
+**Issue:** The email validation rule was `'email'`, which accepts loosely formatted strings that aren't valid email addresses.
+
+**Why it matters:** Invalid emails waste resources during campaign dispatch — jobs are created and queued for addresses that will inevitably bounce. This increases queue load and degrades deliverability metrics.
+
+**Fix:** Changed to `'email:rfc'` for strict RFC 5321 compliance. Added `max:255` to prevent oversized inputs.
+
+**Trade-off:** DNS validation (`email:rfc,dns`) was considered but rejected — it requires network lookups during validation, slows down requests, and fails in environments without internet access (CI, containers).
+
+---
+
+## 29. Missing type validation on foreign key inputs
+
+**Issue:** `contact_list_id` and `contact_id` in FormRequests only validated with `exists:` but not `integer`. String values could pass validation and cause unexpected query behaviour.
+
+**Why it matters:** MySQL's type coercion silently converts strings to integers, which can lead to incorrect matches (e.g., `"1abc"` matches ID `1`). Explicit type validation catches malformed input at the boundary.
+
+**Fix:** Added `'integer'` rule to all foreign key fields in FormRequests.
+
+---
+
+## 30. No max length on campaign body
+
+**Issue:** The campaign `body` field had no size limit in the FormRequest. The migration defines it as `text` (64KB in MySQL), but no application-level validation existed.
+
+**Why it matters:** An attacker could submit a body with millions of characters, causing excessive memory usage during request processing, storage bloat, and slow job processing when the body is loaded for each send.
+
+**Fix:** Added `'max:65535'` to match the MySQL `text` column limit.
+
+---
+
+## 31. Job error messages may contain sensitive data
+
+**Issue:** The `failed()` method in `SendCampaignEmail` stores the raw exception message in the database. Exception messages can contain SQL queries, file paths, credentials, or internal application details.
+
+**Why it matters:** If error data is exposed via an API endpoint (e.g., campaign show with send details), internal implementation details leak to the client. This is an information disclosure vulnerability.
+
+**Fix:** Truncated error messages to 500 characters using `Str::limit()`. Added a `timeout` of 30 seconds to prevent hung jobs from blocking the worker indefinitely.
+
+---
+
+## 32. Long-running database transaction in campaign dispatch
+
+**Issue:** The entire dispatch operation (lock + status update + chunked contact processing + job dispatching) was wrapped in a single `DB::transaction()`. With large lists, this transaction could run for minutes.
+
+**Why it matters:** Long-running transactions hold row locks, preventing other operations on the same rows. They also increase the risk of deadlocks, connection timeouts, and innodb lock wait timeouts in MySQL.
+
+**Fix:** Separated the transaction into two phases: (1) a short transaction that acquires the lock and updates the status atomically, and (2) the chunked contact processing outside the transaction. The status update is the critical section — once marked as `sending`, the scheduler won't re-dispatch it, even if the chunking fails midway.
+
+**Trade-off:** If the chunking fails after the transaction commits, some contacts may not have sends created. This is recoverable — a retry mechanism or admin action can resume dispatch for the remaining contacts. The alternative (long transaction) risks worse outcomes: deadlocks, connection pool exhaustion, and cascading failures.
+
+---
+
+## 33. API error responses expose internal details
+
+**Issue:** The default Laravel exception handler returns detailed error messages and stack traces in JSON responses, including model class names, SQL queries, and file paths.
+
+**Why it matters:** Information disclosure — attackers can use internal error details to map the application structure, discover table names, and craft targeted attacks.
+
+**Fix:** Added custom exception rendering in `bootstrap/app.php` for `ModelNotFoundException` and `NotFoundHttpException`. API requests now receive a generic `{"error": "Resource not found."}` instead of model-specific details. In production, `APP_DEBUG=false` hides all stack traces.

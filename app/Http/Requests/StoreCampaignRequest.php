@@ -15,8 +15,8 @@ class StoreCampaignRequest extends FormRequest
     {
         return [
             'subject' => ['required', 'string', 'max:255'],
-            'body' => ['required', 'string'],
-            'contact_list_id' => ['required', 'exists:contact_lists,id'],
+            'body' => ['required', 'string', 'max:65535'],
+            'contact_list_id' => ['required', 'integer', 'exists:contact_lists,id'],
             'scheduled_at' => ['nullable', 'date', 'after:now'],
         ];
     }

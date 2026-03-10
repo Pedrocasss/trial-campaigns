@@ -8,6 +8,7 @@ Schedule::call(function () {
     Campaign::where('status', 'draft')
         ->whereNotNull('scheduled_at')
         ->where('scheduled_at', '<=', now())
+        ->cursor()
         ->each(function (Campaign $campaign) {
             app(CampaignService::class)->dispatch($campaign);
         });

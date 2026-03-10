@@ -13,6 +13,11 @@ class Contact extends Model
 
     protected $fillable = ['name', 'email', 'status'];
 
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'active');
+    }
+
     public function contactLists(): BelongsToMany
     {
         return $this->belongsToMany(ContactList::class);

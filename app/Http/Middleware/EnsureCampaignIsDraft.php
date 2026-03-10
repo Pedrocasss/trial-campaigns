@@ -10,7 +10,11 @@ class EnsureCampaignIsDraft
 {
     public function handle(Request $request, Closure $next)
     {
-        $campaign = Campaign::findOrFail($request->route('campaign'));
+        $campaign = $request->route('campaign');
+
+        if (!$campaign instanceof Campaign) {
+            $campaign = Campaign::findOrFail($campaign);
+        }
 
         if ($campaign->status !== 'draft') {
             return response()->json(['error' => 'Campaign must be in draft status.'], 422);

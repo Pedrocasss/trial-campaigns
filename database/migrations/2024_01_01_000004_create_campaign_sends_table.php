@@ -17,7 +17,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['campaign_id', 'contact_id']);
-            $table->index('status');
+            $table->index(['campaign_id', 'status']);
         });
     }
 
