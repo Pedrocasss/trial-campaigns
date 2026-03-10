@@ -1,82 +1,129 @@
-# Campaign Manager — Technical Trial
+# Campaign Manager
 
-## Overview
+Laravel application for managing email campaigns with contacts, lists, scheduled dispatch, and send tracking.
 
-This is a partially built Laravel application for managing email campaigns. It was developed quickly and is considered working but not production-ready.
+## Tech Stack
 
-Your task has two parts:
-
-1. **Review and fix** the existing codebase
-2. **Build the missing API layer** from scratch
+- PHP 8.4 + Laravel 12
+- MySQL 8.0
+- Redis 7 (Queue Workers)
+- Docker Compose
 
 ## Setup
 
+### 1. Clone and configure
+
 ```bash
+git clone <repository-url>
+cd trial-campaigns
 cp .env.example .env
-composer install
-php artisan key:generate
-php artisan migrate --seed
-php artisan queue:work
 ```
 
-## What exists (if not, create to work)
+### 2. Install dependencies
 
-- Models: `Contact`, `ContactList`, `Campaign`, `CampaignSend`
-- A `CampaignService` for dispatching campaigns
-- A `SendCampaignEmail` Job
-- A scheduled command that dispatches due campaigns
-- Middleware: `EnsureCampaignIsDraft`
+```bash
+docker run --rm -v ${PWD}:/var/www -w /var/www composer:latest install
+```
 
-## Part 1 — Code Review
+### 3. Start containers
 
-Review everything that exists: migrations, models, service, job, middleware, scheduler.
+```bash
+docker compose up -d
+```
 
-For each problem you find, document it in `CHANGES.md`:
+This starts 4 services:
+- **app** — PHP-FPM + Laravel (port 8000)
+- **queue** — Redis queue worker
+- **mysql** — MySQL 8.0 (port 3307)
+- **redis** — Redis 7 (port 6380)
 
-- What the issue is
-- Why it matters in production
-- How you fixed it
+### 4. Generate key and run migrations
 
-No hints on how many issues exist or where they are.
+```bash
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan migrate --seed
+```
 
-## Part 2 — Build the API
+### 5. Verify
 
-Implement a RESTful JSON API with the following endpoints:
+```bash
+docker compose exec app php artisan test
+```
+
+## API Endpoints
+
+All endpoints are rate-limited to 60 requests/minute.
 
 ### Contacts
 
-- `GET /api/contacts` — paginated list
-- `POST /api/contacts` — create (name, email, status)
-- `POST /api/contacts/{id}/unsubscribe` — mark as unsubscribed
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/contacts` | Paginated list |
+| POST | `/api/contacts` | Create (name, email) |
+| POST | `/api/contacts/{id}/unsubscribe` | Mark as unsubscribed |
 
 ### Contact Lists
 
-- `GET /api/contact-lists` — list all
-- `POST /api/contact-lists` — create
-- `POST /api/contact-lists/{id}/contacts` — add a contact to a list
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/contact-lists` | List with contact count |
+| POST | `/api/contact-lists` | Create (name) |
+| POST | `/api/contact-lists/{id}/contacts` | Add contact to list |
 
 ### Campaigns
 
-- `GET /api/campaigns` — list with send stats
-- `POST /api/campaigns` — create (subject, body, contact_list_id, scheduled_at)
-- `GET /api/campaigns/{id}` — show with send stats
-- `POST /api/campaigns/{id}/dispatch` — dispatch immediately
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/campaigns` | List with send stats |
+| POST | `/api/campaigns` | Create (subject, body, contact_list_id, scheduled_at) |
+| GET | `/api/campaigns/{id}` | Show with send stats |
+| POST | `/api/campaigns/{id}/dispatch` | Dispatch to queue |
 
-### Requirements
+## Architecture
 
-- Use FormRequest classes for validation
-- No authentication required
-- Pagination on list endpoints
-- Stats (pending/sent/failed counts) must use DB aggregation, not collection counting
+```
+app/
+├── Contracts/          # Repository + service interfaces
+├── Enums/              # CampaignStatus, ContactStatus, CampaignSendStatus
+├── Http/
+│   ├── Controllers/    # Thin controllers, delegate to repositories/services
+│   ├── Middleware/      # EnsureCampaignIsDraft guard
+│   ├── Requests/       # FormRequest validation with Enum rules
+│   └── Resources/      # API Resources for JSON output
+├── Jobs/               # SendCampaignEmail (retry, backoff, idempotency)
+├── Models/             # Eloquent models with enum casts and scopes
+├── Repositories/       # Eloquent implementations of contracts
+├── Services/           # CampaignService (dispatch orchestration)
+└── Providers/          # Interface → implementation bindings
+```
 
-## Deliverables
+## Key Decisions
 
-- Fixed codebase with `CHANGES.md`
-- Working API
-- At least one Feature test
+- **Repository Pattern** for data access abstraction (SOLID — Dependency Inversion)
+- **PHP Enums** for type-safe status fields
+- **Redis** queue driver to decouple job processing from MySQL
+- **Pessimistic locking** on campaign dispatch to prevent race conditions
+- **Batch upsert** instead of per-record insert for send creation
+- **chunkById** for memory-efficient processing of large contact lists
+- **Exponential backoff** on job retries (10s, 60s, 300s)
 
-Time estimate: 2–3 hours. Use any tools you normally use.
+## Tests
 
-## Questions?
+```bash
+docker compose exec app php artisan test
+```
 
-Open an issue in this repository.
+20 feature tests covering:
+- Contact CRUD and unsubscribe
+- Contact list management and duplicate prevention
+- Campaign CRUD, stats aggregation, and dispatch
+- Dispatch idempotency and active-only filtering
+- Job send, skip, failure, and retry configuration
+
+## Out of Scope
+
+- **Authentication/Authorization** — Not implemented as the requirements explicitly state "No authentication required". In a production environment, this would be the first addition (e.g., Laravel Sanctum for API token auth).
+
+## Documentation
+
+See [CHANGES.md](CHANGES.md) for a detailed list of all 43 issues identified and fixed.
