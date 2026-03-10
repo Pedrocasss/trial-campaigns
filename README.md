@@ -120,6 +120,15 @@ docker compose exec app php artisan test
 - Dispatch idempotency and active-only filtering
 - Job send, skip, failure, and retry configuration
 
+## Email Sending
+
+Email sending is mocked via `LogEmailSender`, as per requirements. The architecture is designed for easy swapping — to use a real transport:
+
+1. Create a class implementing `EmailSenderInterface`
+2. Update the binding in `AppServiceProvider`
+
+No changes needed in the Job, Service, or Controllers.
+
 ## Out of Scope
 
 - **Authentication/Authorization** — Not implemented as the requirements explicitly state "No authentication required". In a production environment, this would be the first addition (e.g., Laravel Sanctum for API token auth).
