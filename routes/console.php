@@ -1,15 +1,14 @@
 <?php
 
-use App\Models\Campaign;
+use App\Contracts\CampaignRepositoryInterface;
 use App\Services\CampaignService;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::call(function () {
-    Campaign::where('status', 'draft')
-        ->whereNotNull('scheduled_at')
-        ->where('scheduled_at', '<=', now())
-        ->cursor()
-        ->each(function (Campaign $campaign) {
-            app(CampaignService::class)->dispatch($campaign);
-        });
+    $repository = app(CampaignRepositoryInterface::class);
+    $service = app(CampaignService::class);
+
+    foreach ($repository->getDueForDispatch() as $campaign) {
+        $service->dispatch($campaign);
+    }
 })->everyMinute();

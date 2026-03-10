@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Contracts\EmailSenderInterface;
 use App\Models\CampaignSend;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -23,7 +24,7 @@ class SendCampaignEmail implements ShouldQueue
         private readonly CampaignSend $campaignSend
     ) {}
 
-    public function handle(): void
+    public function handle(EmailSenderInterface $sender): void
     {
         $send = $this->campaignSend->load(['contact', 'campaign']);
 
@@ -31,7 +32,7 @@ class SendCampaignEmail implements ShouldQueue
             return;
         }
 
-        $this->sendEmail(
+        $sender->send(
             $send->contact->email,
             $send->campaign->subject,
             $send->campaign->body
@@ -51,10 +52,5 @@ class SendCampaignEmail implements ShouldQueue
             'send_id' => $this->campaignSend->id,
             'error' => $exception->getMessage(),
         ]);
-    }
-
-    private function sendEmail(string $to, string $subject, string $body): void
-    {
-        Log::info("Sending email to {$to}: {$subject}");
     }
 }

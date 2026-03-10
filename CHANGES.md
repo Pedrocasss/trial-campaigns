@@ -339,3 +339,42 @@
 **Why it matters:** Information disclosure — attackers can use internal error details to map the application structure, discover table names, and craft targeted attacks.
 
 **Fix:** Added custom exception rendering in `bootstrap/app.php` for `ModelNotFoundException` and `NotFoundHttpException`. API requests now receive a generic `{"error": "Resource not found."}` instead of model-specific details. In production, `APP_DEBUG=false` hides all stack traces.
+
+---
+
+## 34. No Data Access Abstraction Layer — controllers and services coupled to Eloquent
+
+**Issue:** Controllers called Eloquent models directly (`Contact::paginate()`, `Campaign::create()`, etc.). The service layer also depended directly on Eloquent models for all database operations. There was no abstraction between the business logic and the data access layer.
+
+**Why it matters:** Direct coupling to Eloquent means:
+- Business logic cannot be tested without a database
+- Switching the data source (e.g., from MySQL to an API, or to a different ORM) requires rewriting controllers and services
+- Violates the Dependency Inversion Principle (SOLID) — high-level modules depend on low-level modules
+- The requirements explicitly state: "Use of a Data Access Abstraction Layer for interaction with MySQL"
+
+**Fix:** Introduced the Repository Pattern with interfaces and concrete implementations:
+- `ContactRepositoryInterface` → `EloquentContactRepository`
+- `ContactListRepositoryInterface` → `EloquentContactListRepository`
+- `CampaignRepositoryInterface` → `EloquentCampaignRepository`
+
+Controllers now depend on interfaces injected via constructor. The `AppServiceProvider` binds interfaces to their Eloquent implementations. To switch data sources, only the bindings and implementations need to change — controllers and services remain untouched.
+
+---
+
+## 35. Email sending tightly coupled to the Job — not mockable or swappable
+
+**Issue:** The `SendCampaignEmail` job contained a private `sendEmail()` method with the email logic hardcoded. There was no way to swap the email transport (e.g., from log to SMTP, or to a third-party API) without modifying the job.
+
+**Why it matters:** Violates the Open/Closed Principle (SOLID) — the job must be modified to change email behaviour. It also makes testing difficult — you can't mock the email sender without mocking the entire job.
+
+**Fix:** Extracted an `EmailSenderInterface` contract with a single `send()` method. Created `LogEmailSender` as the default implementation (mocks the send). The job receives the sender via method injection in `handle(EmailSenderInterface $sender)`. To switch to a real SMTP sender, create a new implementation and update the binding in `AppServiceProvider` — no job code changes needed.
+
+---
+
+## 36. Service layer not using dependency injection
+
+**Issue:** `CampaignService` accessed Eloquent models and the database directly, with no constructor dependencies. The scheduler also resolved the service via `app()` without going through an interface.
+
+**Why it matters:** Without DI, the service cannot be tested in isolation. Its behaviour is permanently tied to the database layer. This violates the Dependency Inversion Principle and makes unit testing impractical.
+
+**Fix:** Refactored `CampaignService` to receive `CampaignRepositoryInterface` via constructor injection. All database operations (lock, upsert, query) go through the repository. The scheduler resolves both the repository and the service via the container, respecting the dependency chain.
