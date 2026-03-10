@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ContactStatus;
 use App\Models\Contact;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -34,7 +35,7 @@ class ContactApiTest extends TestCase
 
         $this->assertDatabaseHas('contacts', [
             'email' => 'john@example.com',
-            'status' => 'active',
+            'status' => ContactStatus::Active->value,
         ]);
     }
 
@@ -61,16 +62,16 @@ class ContactApiTest extends TestCase
 
     public function test_can_unsubscribe_contact(): void
     {
-        $contact = Contact::factory()->create(['status' => 'active']);
+        $contact = Contact::factory()->create(['status' => ContactStatus::Active]);
 
         $response = $this->postJson("/api/contacts/{$contact->id}/unsubscribe");
 
         $response->assertOk()
-            ->assertJsonPath('data.status', 'unsubscribed');
+            ->assertJsonPath('data.status', ContactStatus::Unsubscribed->value);
 
         $this->assertDatabaseHas('contacts', [
             'id' => $contact->id,
-            'status' => 'unsubscribed',
+            'status' => ContactStatus::Unsubscribed->value,
         ]);
     }
 }

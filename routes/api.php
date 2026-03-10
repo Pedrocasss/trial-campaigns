@@ -17,5 +17,6 @@ Route::middleware('throttle:60,1')->group(function () {
     Route::get('/campaigns', [CampaignController::class, 'index']);
     Route::post('/campaigns', [CampaignController::class, 'store']);
     Route::get('/campaigns/{campaign}', [CampaignController::class, 'show']);
-    Route::post('/campaigns/{campaign}/dispatch', [CampaignController::class, 'dispatch']);
+    Route::post('/campaigns/{campaign}/dispatch', [CampaignController::class, 'dispatch'])
+        ->middleware('campaign.draft');
 });

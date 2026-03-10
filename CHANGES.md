@@ -418,3 +418,33 @@ Controllers now depend on interfaces injected via constructor. The `AppServicePr
 **Why it matters:** The job handles email delivery, status tracking, and error recording. Without tests, regressions in retry behaviour, idempotency, or failure handling would go undetected. The requirements explicitly ask for tests.
 
 **Fix:** Created `SendCampaignEmailTest` with 4 tests: (1) sends email and marks as sent, (2) skips already-sent sends (idempotency), (3) marks send as failed on exception, (4) verifies retry configuration (tries, backoff, timeout).
+
+---
+
+## 41. Validation rule uses raw strings instead of Enum
+
+**Issue:** `StoreContactRequest` validates the `status` field with `'in:active,unsubscribed'` — hardcoded strings that duplicate the `ContactStatus` enum definition.
+
+**Why it matters:** If a new status is added to the enum, the validation rule must be updated separately. This is a maintenance risk — the enum and the validation can drift out of sync silently.
+
+**Fix:** Replaced `'in:active,unsubscribed'` with `Rule::enum(ContactStatus::class)`. The validation now derives valid values directly from the enum, ensuring they're always in sync.
+
+---
+
+## 42. `EnsureCampaignIsDraft` middleware registered but never applied
+
+**Issue:** The middleware alias `campaign.draft` is registered in `bootstrap/app.php`, but no route uses it. Instead, `CampaignController::dispatch()` duplicates the same status check inline.
+
+**Why it matters:** The middleware exists specifically to guard the dispatch route — that's its single responsibility. Having the controller duplicate the check defeats the purpose of the middleware and violates SRP. If the guard logic changes, both locations must be updated.
+
+**Fix:** Applied `->middleware('campaign.draft')` to the dispatch route. Removed the duplicate status check from the controller. The controller now only handles the action; the middleware handles the guard.
+
+---
+
+## 43. Dead `updateStatus()` method in repository
+
+**Issue:** `CampaignRepositoryInterface` defines `updateStatus()` and `EloquentCampaignRepository` implements it, but no code ever calls it. The status update is handled atomically inside `findDraftForUpdate()`.
+
+**Why it matters:** Dead code in an interface is worse than dead code in a class — every future implementation must provide a method nobody uses. It clutters the contract and misleads developers into thinking it's part of the workflow.
+
+**Fix:** Removed `updateStatus()` from both the interface and the implementation.
